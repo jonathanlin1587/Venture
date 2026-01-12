@@ -12,21 +12,19 @@ Follow these steps to get your code on GitHub, then deploy to Vercel.
 
 ## Step 2: Connect Your Local Code to GitHub
 
-After creating the repository, GitHub will show you commands. Run these in your terminal:
+After creating the repository, run these commands in your terminal:
 
 ```bash
-cd /Users/jonathanlin/Desktop/Projects/QuestList
-
-# Add all your files
-git add .
-
-# Commit everything
-git commit -m "Initial commit - Venture app"
+cd /Users/jonathanlin/Desktop/Projects/Venture
 
 # Add the GitHub remote (replace YOUR_USERNAME with your GitHub username)
 git remote add origin https://github.com/YOUR_USERNAME/venture.git
 
-# Push to GitHub
+# Push to GitHub (you're currently on 'master' branch)
+# Option A: Keep 'master' branch name
+git push -u origin master
+
+# Option B: Rename to 'main' and push (recommended)
 git branch -M main
 git push -u origin main
 ```

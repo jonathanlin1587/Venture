@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npm run build:web",
+  "buildCommand": "npm install && npm run build:web",
   "outputDirectory": "web-build",
   "devCommand": "npm run web",
   "installCommand": "npm install",
@@ -12,7 +12,7 @@
   ],
   "headers": [
     {
-      "source": "/static/(.*)",
+      "source": "/_expo/static/(.*)",
       "headers": [
         {
           "key": "Cache-Control",

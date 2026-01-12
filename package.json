@@ -11,7 +11,7 @@
     "clear": "expo start --clear",
     "reset": "expo start --clear",
     "tunnel": "expo start --tunnel",
-    "build:web": "expo export:web",
+    "build:web": "node scripts/build-web.js",
     "deploy:rules": "firebase deploy --only firestore:rules",
     "deploy:firestore": "bash deploy-firestore.sh",
     "deploy:firestore-rules": "bash deploy-rules.sh",

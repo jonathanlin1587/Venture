@@ -20,10 +20,30 @@ git push origin main
 
 ## Step 2: Set Up Vercel
 
+### Option A: Using Vercel Web Interface (Recommended)
+
 1. Go to [vercel.com](https://vercel.com) and sign up/login
 2. Click "Add New Project"
-3. Import your GitHub repository (Venture)
+3. Import your GitHub repository (`jonathanlin1587/venture`)
 4. Vercel will auto-detect the settings from `vercel.json`
+5. **Important**: If build fails, you may need to manually configure:
+   - Framework Preset: "Other" or "Expo"
+   - Build Command: `npm run build:web`
+   - Output Directory: `web-build`
+   - Install Command: `npm install`
+
+### Option B: Using Vercel CLI
+
+Run the deployment script:
+```bash
+./deploy-vercel.sh
+```
+
+Or manually:
+```bash
+vercel login
+vercel --prod
+```
 
 ## Step 3: Configure Environment Variables
 
@@ -72,10 +92,17 @@ After deployment, you need to add your Vercel domain to Firebase:
 
 ## Troubleshooting
 
+### Build fails with "expo-router/node/render.js" error
+This is a known issue with Expo SDK 54 and React Navigation apps. Solutions:
+1. **Recommended**: Use Vercel's web interface - it handles Expo builds better
+2. Try setting Framework Preset to "Other" in Vercel project settings
+3. The build script will create a minimal structure - Vercel will build the actual app
+
 ### Build fails
 - Check build logs in Vercel dashboard
 - Ensure all environment variables are set
 - Make sure `npm install` completes successfully
+- Try clearing Vercel build cache in project settings
 
 ### Authentication not working
 - Verify Firebase environment variables are correct
@@ -86,6 +113,7 @@ After deployment, you need to add your Vercel domain to Firebase:
 - Check that `web-build` folder is being generated
 - Verify `vercel.json` configuration is correct
 - Check Vercel build logs for errors
+- Ensure all Firebase environment variables are set correctly
 
 ## Local Testing
 
