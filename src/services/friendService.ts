@@ -293,8 +293,6 @@ export const subscribeToFriends = (
     where('status', '==', 'accepted')
   );
 
-  let cachedFriends: User[] = [];
-
   const unsubscribe = onSnapshot(friendRequestsQuery, async (snapshot) => {
     const friendIds: string[] = [];
 
@@ -316,15 +314,8 @@ export const subscribeToFriends = (
 
     const validFriends = friends.filter((friend): friend is User => friend !== null);
     
-    // Only update if the list actually changed to avoid unnecessary re-renders
-    const friendsChanged = 
-      validFriends.length !== cachedFriends.length ||
-      validFriends.some((f, i) => f.id !== cachedFriends[i]?.id);
-    
-    if (friendsChanged) {
-      cachedFriends = validFriends;
-      callback(validFriends);
-    }
+    // Always update - the subscription should fire for both users when status changes
+    callback(validFriends);
   });
 
   return unsubscribe;
