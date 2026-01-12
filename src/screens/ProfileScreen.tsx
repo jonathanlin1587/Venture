@@ -1,0 +1,609 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, Modal, TextInput, ActivityIndicator, Image, ScrollView, Animated, Platform } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import { useAuth } from '../context/AuthContext';
+import { useBucketStore } from '../store/bucketStore';
+
+// Toast Component
+const Toast: React.FC<{ visible: boolean; message: string; onHide: () => void }> = ({ visible, message, onHide }) => {
+  const opacity = React.useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (visible) {
+      Animated.sequence([
+        Animated.timing(opacity, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.delay(2000),
+        Animated.timing(opacity, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+      ]).start(() => {
+        onHide();
+      });
+    }
+  }, [visible]);
+
+  if (!visible) return null;
+
+  return (
+    <Animated.View style={[styles.toastContainer, { opacity }]}>
+      <View style={styles.toast}>
+        <Text style={styles.toastText}>{message}</Text>
+      </View>
+    </Animated.View>
+  );
+};
+
+export const ProfileScreen: React.FC = () => {
+  const navigation = useNavigation();
+  const { user, signOut, updateProfile } = useAuth();
+  const { buckets, goals } = useBucketStore();
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [displayName, setDisplayName] = useState(user?.displayName || '');
+  const [bio, setBio] = useState(user?.bio || '');
+  const [photoURL, setPhotoURL] = useState(user?.photoURL || '');
+  const [updating, setUpdating] = useState(false);
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+
+  useEffect(() => {
+    if (user) {
+      setDisplayName(user.displayName || '');
+      setBio(user.bio || '');
+      setPhotoURL(user.photoURL || '');
+    }
+  }, [user]);
+
+  // Subscribe to buckets when user is available
+  useEffect(() => {
+    if (!user?.id) return;
+    
+    const store = useBucketStore.getState();
+    store.subscribeToBuckets(user.id);
+    
+    return () => {
+      // Cleanup handled by store
+    };
+  }, [user?.id]);
+
+  // Subscribe to goals for all buckets when buckets change
+  useEffect(() => {
+    const store = useBucketStore.getState();
+    const currentGoalIds = Object.keys(goals);
+    
+    buckets.forEach(bucket => {
+      if (!currentGoalIds.includes(bucket.id)) {
+        store.subscribeToGoals(bucket.id);
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [buckets.map(b => b.id).join(',')]);
+
+  // Calculate Life Stats
+  const lifeStats = useMemo(() => {
+    const allGoals = Object.values(goals).flat();
+    const completedGoals = allGoals.filter(g => g.completed).length;
+    const activeBuckets = buckets.filter(b => {
+      const bucketGoals = goals[b.id] || [];
+      return bucketGoals.some(g => !g.completed);
+    }).length;
+    
+    // Calculate unique friends from bucket members
+    const friendSet = new Set<string>();
+    buckets.forEach(bucket => {
+      bucket.members.forEach(member => {
+        if (member.userId !== user?.id) {
+          friendSet.add(member.userId);
+        }
+      });
+    });
+    const friendsCount = friendSet.size;
+
+    return {
+      goalsCompleted: completedGoals,
+      activeBuckets,
+      friends: friendsCount,
+    };
+  }, [buckets, goals, user?.id]);
+
+  const showToast = (message: string) => {
+    setToastMessage(message);
+    setToastVisible(true);
+  };
+
+  const handleSignOut = async () => {
+    // Show confirmation dialog
+    const confirmSignOut = async () => {
+      try {
+        console.log('Starting sign out process...');
+        // Clear bucket store state before signing out
+        useBucketStore.getState().clearState();
+        console.log('Bucket store cleared');
+        // Sign out - this will trigger navigation to login screen via AppNavigator
+        await signOut();
+        console.log('SignOut completed');
+        // The navigation will happen automatically when user state becomes null
+      } catch (error: any) {
+        console.error('Sign out error:', error);
+        Alert.alert('Error', error.message || 'Failed to sign out');
+      }
+    };
+
+    // Use window.confirm for web compatibility, Alert for native
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && window.confirm) {
+      // Web platform - use window.confirm
+      if (window.confirm('Are you sure you want to sign out?')) {
+        await confirmSignOut();
+      }
+    } else {
+      // Native platform - use Alert
+      Alert.alert(
+        'Sign Out',
+        'Are you sure you want to sign out?',
+        [
+          { 
+            text: 'Cancel', 
+            style: 'cancel' 
+          },
+          {
+            text: 'Sign Out',
+            style: 'destructive',
+            onPress: confirmSignOut,
+          },
+        ],
+        { cancelable: true }
+      );
+    }
+  };
+
+  const handleUpdateProfile = async () => {
+    if (!displayName.trim() || !user) {
+      Alert.alert('Error', 'Please enter a display name');
+      return;
+    }
+
+    setUpdating(true);
+    try {
+      await updateProfile({
+        displayName: displayName.trim(),
+        bio: bio.trim() || undefined,
+        photoURL: photoURL.trim() || undefined,
+      });
+      setShowEditModal(false);
+      showToast('Profile updated successfully');
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to update profile');
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  return (
+    <View style={styles.container}>
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+        {user && (
+          <View style={styles.profileSection}>
+            {/* Profile Picture */}
+            <View style={styles.avatarContainer}>
+              {user.photoURL ? (
+                <Image source={{ uri: user.photoURL }} style={styles.avatarImage} />
+              ) : (
+                <View style={styles.avatarFallback}>
+                  <Text style={styles.avatarText}>
+                    {user.displayName.charAt(0).toUpperCase()}
+                  </Text>
+                </View>
+              )}
+            </View>
+            
+            {/* Name and Email */}
+            <Text style={styles.name}>{user.displayName}</Text>
+            <Text style={styles.email}>{user.email}</Text>
+            
+            {/* Life Stats */}
+            <View style={styles.lifeStats}>
+              <Text style={styles.lifeStatsText}>
+                {lifeStats.goalsCompleted} Goals Completed • {lifeStats.activeBuckets} Active Buckets • {lifeStats.friends} Friends
+              </Text>
+            </View>
+            
+            {/* Bio */}
+            {user.bio && (
+              <Text style={styles.bio}>{user.bio}</Text>
+            )}
+          </View>
+        )}
+
+        {/* Account Card */}
+        <View style={styles.card}>
+          <TouchableOpacity 
+            style={styles.menuItem} 
+            onPress={() => setShowEditModal(true)}
+            activeOpacity={0.7}
+          >
+            <View style={styles.menuItemLeft}>
+              <Text style={styles.menuIcon}>✏️</Text>
+              <Text style={styles.menuText}>Edit Profile</Text>
+            </View>
+            <Text style={styles.menuArrow}>›</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.menuItem} 
+            onPress={() => navigation.navigate('Settings' as never)}
+            activeOpacity={0.7}
+          >
+            <View style={styles.menuItemLeft}>
+              <Text style={styles.menuIcon}>⚙️</Text>
+              <Text style={styles.menuText}>Settings</Text>
+            </View>
+            <Text style={styles.menuArrow}>›</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* About Card */}
+        <View style={styles.card}>
+          <TouchableOpacity 
+            style={styles.menuItem} 
+            onPress={() => navigation.navigate('HelpSupport' as never)}
+            activeOpacity={0.7}
+          >
+            <View style={styles.menuItemLeft}>
+              <Text style={styles.menuIcon}>❓</Text>
+              <Text style={styles.menuText}>Help & Support</Text>
+            </View>
+            <Text style={styles.menuArrow}>›</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.menuItem} 
+            onPress={() => navigation.navigate('PrivacyPolicy' as never)}
+            activeOpacity={0.7}
+          >
+            <View style={styles.menuItemLeft}>
+              <Text style={styles.menuIcon}>🛡️</Text>
+              <Text style={styles.menuText}>Privacy Policy</Text>
+            </View>
+            <Text style={styles.menuArrow}>›</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.menuItem} 
+            onPress={() => navigation.navigate('TermsOfService' as never)}
+            activeOpacity={0.7}
+          >
+            <View style={styles.menuItemLeft}>
+              <Text style={styles.menuIcon}>📄</Text>
+              <Text style={styles.menuText}>Terms of Service</Text>
+            </View>
+            <Text style={styles.menuArrow}>›</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Log Out Button */}
+        <TouchableOpacity 
+          style={styles.logOutButton} 
+          onPress={() => {
+            console.log('Logout button pressed!');
+            handleSignOut();
+          }}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.logOutText}>Log Out</Text>
+        </TouchableOpacity>
+      </ScrollView>
+
+      {/* Edit Profile Modal */}
+      <Modal
+        visible={showEditModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowEditModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Edit Profile</Text>
+
+            <TextInput
+              style={styles.input}
+              placeholder="Display Name *"
+              placeholderTextColor="#999"
+              value={displayName}
+              onChangeText={setDisplayName}
+            />
+
+            <TextInput
+              style={styles.input}
+              placeholder="Profile Picture URL (optional)"
+              placeholderTextColor="#999"
+              value={photoURL}
+              onChangeText={setPhotoURL}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+
+            <TextInput
+              style={[styles.input, styles.textArea]}
+              placeholder="Bio (optional)"
+              placeholderTextColor="#999"
+              value={bio}
+              onChangeText={setBio}
+              multiline
+              numberOfLines={4}
+            />
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => {
+                  setShowEditModal(false);
+                  setDisplayName(user?.displayName || '');
+                  setBio(user?.bio || '');
+                  setPhotoURL(user?.photoURL || '');
+                }}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.saveButton]}
+                onPress={handleUpdateProfile}
+                disabled={updating}
+              >
+                {updating ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.saveButtonText}>Save</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Toast */}
+      <Toast 
+        visible={toastVisible} 
+        message={toastMessage} 
+        onHide={() => setToastVisible(false)} 
+      />
+    </View>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#f8f9fa',
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: 20,
+    paddingBottom: 40,
+  },
+  profileSection: {
+    alignItems: 'center',
+    paddingVertical: 32,
+    paddingHorizontal: 20,
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  avatarContainer: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    borderWidth: 3,
+    borderColor: '#e5e7eb',
+    overflow: 'hidden',
+    marginBottom: 20,
+    backgroundColor: '#f3f4f6',
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+  },
+  avatarFallback: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#6366F1',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarText: {
+    fontSize: 48,
+    fontWeight: '600',
+    color: '#fff',
+  },
+  name: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 6,
+    textAlign: 'center',
+  },
+  email: {
+    fontSize: 15,
+    color: '#6b7280',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  lifeStats: {
+    marginTop: 8,
+    marginBottom: 16,
+  },
+  lifeStatsText: {
+    fontSize: 14,
+    color: '#6366F1',
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  bio: {
+    fontSize: 15,
+    color: '#4b5563',
+    textAlign: 'center',
+    paddingHorizontal: 20,
+    lineHeight: 22,
+    marginTop: 8,
+  },
+  card: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    marginBottom: 16,
+    padding: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  menuItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    minHeight: 56,
+  },
+  menuItemLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  menuIcon: {
+    fontSize: 20,
+    marginRight: 12,
+    width: 28,
+    textAlign: 'center',
+  },
+  menuText: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#111827',
+    flex: 1,
+  },
+  menuArrow: {
+    fontSize: 24,
+    color: '#9ca3af',
+    fontWeight: '300',
+  },
+  logOutButton: {
+    backgroundColor: '#fef2f2',
+    borderRadius: 16,
+    padding: 16,
+    alignItems: 'center',
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: '#fee2e2',
+  },
+  logOutText: {
+    color: '#dc2626',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 24,
+    width: '100%',
+    maxWidth: 400,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  modalTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    marginBottom: 24,
+    color: '#111827',
+  },
+  input: {
+    borderWidth: 1.5,
+    borderColor: '#e5e7eb',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+    fontSize: 16,
+    backgroundColor: '#fff',
+    color: '#111827',
+  },
+  textArea: {
+    height: 100,
+    textAlignVertical: 'top',
+    paddingTop: 14,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 8,
+  },
+  modalButton: {
+    flex: 1,
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 48,
+  },
+  cancelButton: {
+    backgroundColor: '#f3f4f6',
+  },
+  cancelButtonText: {
+    color: '#374151',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  saveButton: {
+    backgroundColor: '#6366F1',
+  },
+  saveButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  toastContainer: {
+    position: 'absolute',
+    bottom: 100,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    zIndex: 9999,
+    pointerEvents: 'none',
+  },
+  toast: {
+    backgroundColor: '#1f2937',
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  toastText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '500',
+  },
+});

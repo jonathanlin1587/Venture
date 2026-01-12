@@ -1,0 +1,22 @@
+=========================================
+FIREBASE DEPLOYMENT - QUICK START
+=========================================
+
+I've set everything up! Just run this ONE command in your terminal:
+
+firebase login && firebase use questlist-60033 && firebase deploy --only firestore:rules
+
+OR use the script:
+./deploy-rules.sh
+
+This will:
+1. Login to Firebase (opens browser)
+2. Set your project (questlist-60033)
+3. Deploy security rules
+
+After running, your Firestore rules will be live!
+
+You can verify at:
+https://console.firebase.google.com/project/questlist-60033/firestore/rules
+
+=========================================

@@ -1,0 +1,11 @@
+node_modules
+.expo
+dist
+*.log
+.DS_Store
+.env*.local
+serviceAccountKey.json
+firebase-service-account.json
+ios
+android
+.git

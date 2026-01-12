@@ -1,0 +1,72 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Helper function to check if user is admin (via custom claims)
+    function isAdmin() {
+      return isAuthenticated() && request.auth.token.admin == true;
+    }
+    
+    // Users collection
+    match /users/{userId} {
+      // Admins can read/write all user profiles
+      allow read, write: if isAdmin();
+      // Users can read any user profile (for friend discovery)
+      allow read: if isAuthenticated();
+      // Users can only create/update their own profile
+      allow create, update: if isAuthenticated() && request.auth.uid == userId;
+      allow delete: if false; // Prevent deletion for now
+    }
+    
+    // Buckets collection
+    match /buckets/{bucketId} {
+      // Admins can read/write all buckets
+      allow read, write: if isAdmin();
+      
+      // Users can read buckets they own
+      allow read: if isAuthenticated() && resource.data.ownerId == request.auth.uid;
+      
+      // Users can create buckets - check that ownerId matches authenticated user
+      allow create: if isAuthenticated() && 
+                       request.resource.data.ownerId == request.auth.uid &&
+                       request.resource.data.name is string &&
+                       request.resource.data.type in ['solo', 'duo', 'group'];
+      
+      // Owner can update bucket details
+      allow update: if isAuthenticated() && 
+                       resource.data.ownerId == request.auth.uid;
+      
+      // Only owner can delete bucket
+      allow delete: if isAuthenticated() && 
+                       resource.data.ownerId == request.auth.uid;
+      
+      // Goals subcollection
+      match /goals/{goalId} {
+        // Admins can read/write all goals
+        allow read, write: if isAdmin();
+        
+        // Allow read if user is bucket owner
+        allow read: if isAuthenticated() && 
+                       get(/databases/$(database)/documents/buckets/$(bucketId)).data.ownerId == request.auth.uid;
+        
+        // Allow create if user is bucket owner
+        allow create: if isAuthenticated() && 
+                         get(/databases/$(database)/documents/buckets/$(bucketId)).data.ownerId == request.auth.uid &&
+                         request.resource.data.createdBy == request.auth.uid;
+        
+        // Allow update if user is bucket owner
+        allow update: if isAuthenticated() && 
+                         get(/databases/$(database)/documents/buckets/$(bucketId)).data.ownerId == request.auth.uid;
+        
+        // Allow delete if user is bucket owner
+        allow delete: if isAuthenticated() && 
+                         get(/databases/$(database)/documents/buckets/$(bucketId)).data.ownerId == request.auth.uid;
+      }
+    }
+  }
+}
+
