@@ -23,6 +23,13 @@ interface BucketState {
   unsubscribeFromBuckets: () => void;
   unsubscribeFromGoals: (bucketId: string) => void;
   clearState: () => void;
+  
+  // Helper selectors for shared buckets
+  getOwnedBuckets: (userId: string) => Bucket[];
+  getSharedBuckets: (userId: string) => Bucket[];
+  getBucketById: (bucketId: string) => Bucket | undefined;
+  isBucketOwner: (bucketId: string, userId: string) => boolean;
+  isBucketMember: (bucketId: string, userId: string) => boolean;
 }
 
 export const useBucketStore = create<BucketState>((set, get) => ({
@@ -106,6 +113,37 @@ export const useBucketStore = create<BucketState>((set, get) => ({
       unsubscribeBuckets: null,
       unsubscribeGoals: {},
     });
+  },
+
+  // Helper selectors for shared buckets
+  getOwnedBuckets: (userId: string) => {
+    return get().buckets.filter((bucket) => bucket.ownerId === userId);
+  },
+
+  getSharedBuckets: (userId: string) => {
+    return get().buckets.filter(
+      (bucket) =>
+        bucket.ownerId !== userId &&
+        bucket.members.some((member) => member.userId === userId)
+    );
+  },
+
+  getBucketById: (bucketId: string) => {
+    return get().buckets.find((bucket) => bucket.id === bucketId);
+  },
+
+  isBucketOwner: (bucketId: string, userId: string) => {
+    const bucket = get().getBucketById(bucketId);
+    return bucket?.ownerId === userId;
+  },
+
+  isBucketMember: (bucketId: string, userId: string) => {
+    const bucket = get().getBucketById(bucketId);
+    if (!bucket) return false;
+    return (
+      bucket.ownerId === userId ||
+      bucket.members.some((member) => member.userId === userId)
+    );
   },
 }));
 

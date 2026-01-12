@@ -143,3 +143,20 @@ export interface UserDocument {
   isAdmin?: boolean;
 }
 
+export type FriendStatus = 'pending' | 'accepted' | 'blocked';
+
+export interface FriendRequest {
+  id: string;
+  fromUserId: string;
+  toUserId: string;
+  status: FriendStatus;
+  createdAt: Date;
+}
+
+export interface FriendRequestDocument {
+  fromUserId: string;
+  toUserId: string;
+  status: FriendStatus;
+  createdAt: Timestamp;
+}
+

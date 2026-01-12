@@ -416,6 +416,12 @@ export const removeBucketMember = async (
     }
 
     const data = bucketSnap.data() as BucketDocument;
+    
+    // Prevent removing the owner
+    if (data.ownerId === userId) {
+      throw new Error('Cannot remove the bucket owner');
+    }
+
     const updatedMembers = data.members.filter((m) => m.userId !== userId);
 
     await updateDoc(bucketRef, {
@@ -424,6 +430,99 @@ export const removeBucketMember = async (
   } catch (error: any) {
     console.error('Error removing bucket member:', error);
     throw new Error(error.message || 'Failed to remove bucket member');
+  }
+};
+
+/**
+ * Add multiple members to a bucket at once
+ */
+export const addBucketMembers = async (
+  bucketId: string,
+  userIds: string[]
+): Promise<void> => {
+  try {
+    if (userIds.length === 0) {
+      return;
+    }
+
+    const bucketRef = doc(db, 'buckets', bucketId);
+    const bucketSnap = await getDoc(bucketRef);
+
+    if (!bucketSnap.exists()) {
+      throw new Error('Bucket not found');
+    }
+
+    const data = bucketSnap.data() as BucketDocument;
+    const existingMemberIds = new Set(data.members.map((m) => m.userId));
+    
+    // Filter out users who are already members
+    const newUserIds = userIds.filter((userId) => !existingMemberIds.has(userId));
+    
+    if (newUserIds.length === 0) {
+      return; // All users are already members
+    }
+
+    const newMembers = newUserIds.map((userId) => ({
+      userId,
+      role: 'member' as MemberRole,
+      joinedAt: Timestamp.fromDate(new Date()),
+    }));
+
+    await updateDoc(bucketRef, {
+      members: [
+        ...data.members,
+        ...newMembers,
+      ],
+    });
+  } catch (error: any) {
+    console.error('Error adding bucket members:', error);
+    throw new Error(error.message || 'Failed to add bucket members');
+  }
+};
+
+/**
+ * Check if a user has access to a bucket (owner or member)
+ */
+export const hasBucketAccess = async (
+  bucketId: string,
+  userId: string
+): Promise<boolean> => {
+  try {
+    const bucket = await getBucket(bucketId);
+    if (!bucket) {
+      return false;
+    }
+
+    return bucket.ownerId === userId || 
+           bucket.members.some((m) => m.userId === userId);
+  } catch (error) {
+    console.error('Error checking bucket access:', error);
+    return false;
+  }
+};
+
+/**
+ * Get user's role in a bucket
+ */
+export const getUserBucketRole = async (
+  bucketId: string,
+  userId: string
+): Promise<MemberRole | null> => {
+  try {
+    const bucket = await getBucket(bucketId);
+    if (!bucket) {
+      return null;
+    }
+
+    if (bucket.ownerId === userId) {
+      return 'owner';
+    }
+
+    const member = bucket.members.find((m) => m.userId === userId);
+    return member?.role || null;
+  } catch (error) {
+    console.error('Error getting user bucket role:', error);
+    return null;
   }
 };
 

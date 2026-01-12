@@ -31,6 +31,7 @@ import {
   compressAndConvertToBase64,
 } from '../services/bucketService';
 import { getUserByEmail } from '../services/authService';
+import { getUserFriends } from '../services/friendService';
 import { Bucket, Goal, BucketType, User, BUCKET_COLORS, BUCKET_ICONS, BucketTheme, GOAL_CATEGORIES } from '../types';
 
 type FilterType = 'all' | 'active' | 'completed';
@@ -101,6 +102,9 @@ export const BucketDetailScreen: React.FC<BucketDetailScreenProps> = ({ route })
   const [editGoalNewPhotoPreviews, setEditGoalNewPhotoPreviews] = useState<string[]>([]);
   const [completionJournal, setCompletionJournal] = useState<string>('');
   const [editGoalJournal, setEditGoalJournal] = useState<string>('');
+  const [showShareFriendsModal, setShowShareFriendsModal] = useState(false);
+  const [friends, setFriends] = useState<User[]>([]);
+  const [loadingFriends, setLoadingFriends] = useState(false);
 
   useEffect(() => {
     loadBucket();
@@ -553,6 +557,35 @@ export const BucketDetailScreen: React.FC<BucketDetailScreenProps> = ({ route })
       setMemberUsers(users.filter((u): u is User => u !== null));
     } catch (error) {
       console.error('Error loading member users:', error);
+    }
+  };
+
+  const loadFriends = async () => {
+    if (!user?.id) return;
+    setLoadingFriends(true);
+    try {
+      const friendsList = await getUserFriends(user.id);
+      // Filter out friends who are already members
+      const existingMemberIds = new Set(bucket?.members.map(m => m.userId) || []);
+      const availableFriends = friendsList.filter(f => !existingMemberIds.has(f.id));
+      setFriends(availableFriends);
+    } catch (error) {
+      console.error('Error loading friends:', error);
+      window.alert('Failed to load friends');
+    } finally {
+      setLoadingFriends(false);
+    }
+  };
+
+  const handleShareWithFriend = async (friendId: string) => {
+    try {
+      await addBucketMember(bucketId, friendId);
+      await loadBucket();
+      await loadMemberUsers();
+      setShowShareFriendsModal(false);
+      window.alert('Friend added to bucket!');
+    } catch (error: any) {
+      window.alert(error.message || 'Failed to add friend to bucket');
     }
   };
 
@@ -1400,6 +1433,16 @@ export const BucketDetailScreen: React.FC<BucketDetailScreenProps> = ({ route })
                   </TouchableOpacity>
                 </View>
 
+                <TouchableOpacity
+                  style={styles.shareFriendsButton}
+                  onPress={async () => {
+                    setShowShareFriendsModal(true);
+                    await loadFriends();
+                  }}
+                >
+                  <Text style={styles.shareFriendsButtonText}>👥 Share with Friends</Text>
+                </TouchableOpacity>
+
                 <ScrollView style={styles.membersList}>
                   {memberUsers.map((memberUser) => {
                     const member = bucket.members.find((m) => m.userId === memberUser.id);
@@ -1435,6 +1478,68 @@ export const BucketDetailScreen: React.FC<BucketDetailScreenProps> = ({ route })
                 setShowMembersModal(false);
                 setMemberEmail('');
               }}
+            >
+              <Text style={styles.cancelButtonText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Share with Friends Modal */}
+      <Modal
+        visible={showShareFriendsModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowShareFriendsModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Share with Friends</Text>
+
+            {loadingFriends ? (
+              <View style={styles.centerContainer}>
+                <ActivityIndicator size="large" color="#007AFF" />
+              </View>
+            ) : friends.length === 0 ? (
+              <View style={styles.emptyContainer}>
+                <Text style={styles.emptyText}>No friends available</Text>
+                <Text style={styles.emptySubtext}>
+                  Add friends from your profile to share buckets with them!
+                </Text>
+              </View>
+            ) : (
+              <ScrollView style={styles.friendsList}>
+                {friends.map((friend) => (
+                  <View key={friend.id} style={styles.friendItem}>
+                    <View style={styles.friendInfo}>
+                      {friend.photoURL ? (
+                        <Image source={{ uri: friend.photoURL }} style={styles.friendAvatar} />
+                      ) : (
+                        <View style={styles.friendAvatarFallback}>
+                          <Text style={styles.friendAvatarText}>
+                            {friend.displayName.charAt(0).toUpperCase()}
+                          </Text>
+                        </View>
+                      )}
+                      <View style={styles.friendDetails}>
+                        <Text style={styles.friendName}>{friend.displayName}</Text>
+                        <Text style={styles.friendEmail}>{friend.email}</Text>
+                      </View>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.shareButton}
+                      onPress={() => handleShareWithFriend(friend.id)}
+                    >
+                      <Text style={styles.shareButtonText}>Add</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </ScrollView>
+            )}
+
+            <TouchableOpacity
+              style={[styles.modalButton, styles.cancelButton]}
+              onPress={() => setShowShareFriendsModal(false)}
             >
               <Text style={styles.cancelButtonText}>Close</Text>
             </TouchableOpacity>
@@ -2109,5 +2214,81 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: '#333',
+  },
+  shareFriendsButton: {
+    backgroundColor: '#6366F1',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  shareFriendsButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  friendsList: {
+    maxHeight: 300,
+    marginBottom: 16,
+  },
+  friendItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#f9fafb',
+    borderRadius: 12,
+    marginBottom: 8,
+  },
+  friendInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  friendAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    marginRight: 12,
+  },
+  friendAvatarFallback: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#6366F1',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  friendAvatarText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  friendDetails: {
+    flex: 1,
+  },
+  friendName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#111827',
+    marginBottom: 2,
+  },
+  friendEmail: {
+    fontSize: 14,
+    color: '#6b7280',
+  },
+  shareButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: '#007AFF',
+    borderRadius: 8,
+  },
+  shareButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });

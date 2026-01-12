@@ -3,6 +3,16 @@ import { View, Text, StyleSheet, TouchableOpacity, Alert, Modal, TextInput, Acti
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { useBucketStore } from '../store/bucketStore';
+import { 
+  subscribeToFriends, 
+  sendFriendRequest, 
+  searchUsers, 
+  acceptFriendRequest, 
+  rejectFriendRequest,
+  removeFriend,
+  subscribeToFriendRequests,
+} from '../services/friendService';
+import { User, FriendRequest } from '../types';
 
 // Toast Component
 const Toast: React.FC<{ visible: boolean; message: string; onHide: () => void }> = ({ visible, message, onHide }) => {
@@ -50,6 +60,14 @@ export const ProfileScreen: React.FC = () => {
   const [updating, setUpdating] = useState(false);
   const [toastVisible, setToastVisible] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
+  const [friends, setFriends] = useState<User[]>([]);
+  const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
+  const [showFriendsModal, setShowFriendsModal] = useState(false);
+  const [showAddFriendModal, setShowAddFriendModal] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<User[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [pendingRequestUsers, setPendingRequestUsers] = useState<Record<string, User>>({});
 
   useEffect(() => {
     if (user) {
@@ -84,6 +102,66 @@ export const ProfileScreen: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [buckets.map(b => b.id).join(',')]);
 
+  // Subscribe to friends
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const unsubscribe = subscribeToFriends(user.id, (updatedFriends) => {
+      setFriends(updatedFriends);
+    });
+
+    return () => unsubscribe();
+  }, [user?.id]);
+
+  // Subscribe to friend requests
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const unsubscribe = subscribeToFriendRequests(user.id, async (requests) => {
+      setFriendRequests(requests);
+      
+      // Load user profiles for pending requests
+      const pending = requests.filter(r => r.status === 'pending' && r.toUserId === user.id);
+      if (pending.length > 0) {
+        const { getUserProfile } = await import('../services/authService');
+        const users: Record<string, User> = {};
+        await Promise.all(
+          pending.map(async (request) => {
+            const profile = await getUserProfile(request.fromUserId);
+            if (profile) {
+              users[request.id] = profile;
+            }
+          })
+        );
+        setPendingRequestUsers(users);
+      }
+    });
+
+    return () => unsubscribe();
+  }, [user?.id]);
+
+  // Search users when query changes
+  useEffect(() => {
+    if (!searchQuery.trim() || !user?.id) {
+      setSearchResults([]);
+      return;
+    }
+
+    const searchTimeout = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const results = await searchUsers(searchQuery, user.id);
+        setSearchResults(results);
+      } catch (error: any) {
+        console.error('Error searching users:', error);
+      } finally {
+        setSearching(false);
+      }
+    }, 500);
+
+    return () => clearTimeout(searchTimeout);
+  }, [searchQuery, user?.id]);
+
   // Calculate Life Stats
   const lifeStats = useMemo(() => {
     const allGoals = Object.values(goals).flat();
@@ -92,24 +170,13 @@ export const ProfileScreen: React.FC = () => {
       const bucketGoals = goals[b.id] || [];
       return bucketGoals.some(g => !g.completed);
     }).length;
-    
-    // Calculate unique friends from bucket members
-    const friendSet = new Set<string>();
-    buckets.forEach(bucket => {
-      bucket.members.forEach(member => {
-        if (member.userId !== user?.id) {
-          friendSet.add(member.userId);
-        }
-      });
-    });
-    const friendsCount = friendSet.size;
 
     return {
       goalsCompleted: completedGoals,
       activeBuckets,
-      friends: friendsCount,
+      friends: friends.length,
     };
-  }, [buckets, goals, user?.id]);
+  }, [buckets, goals, friends]);
 
   const showToast = (message: string) => {
     setToastMessage(message);
@@ -183,6 +250,85 @@ export const ProfileScreen: React.FC = () => {
     }
   };
 
+  const handleSendFriendRequest = async (toUserId: string) => {
+    if (!user?.id) return;
+
+    try {
+      await sendFriendRequest(user.id, toUserId);
+      showToast('Friend request sent!');
+      setSearchQuery('');
+      setSearchResults([]);
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to send friend request');
+    }
+  };
+
+  const handleAcceptRequest = async (requestId: string) => {
+    try {
+      await acceptFriendRequest(requestId);
+      showToast('Friend request accepted!');
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to accept friend request');
+    }
+  };
+
+  const handleRejectRequest = async (requestId: string) => {
+    try {
+      await rejectFriendRequest(requestId);
+      showToast('Friend request rejected');
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to reject friend request');
+    }
+  };
+
+  const handleRemoveFriend = async (friendId: string, friendName: string) => {
+    if (!user?.id) return;
+
+    const confirmed = Platform.OS === 'web' && typeof window !== 'undefined' && window.confirm
+      ? window.confirm(`Are you sure you want to remove ${friendName} from your friends?`)
+      : false;
+
+    if (Platform.OS !== 'web') {
+      Alert.alert(
+        'Remove Friend',
+        `Are you sure you want to remove ${friendName} from your friends?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Remove',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                await removeFriend(user.id, friendId);
+                showToast('Friend removed');
+              } catch (error: any) {
+                Alert.alert('Error', error.message || 'Failed to remove friend');
+              }
+            },
+          },
+        ]
+      );
+      return;
+    }
+
+    if (confirmed) {
+      try {
+        await removeFriend(user.id, friendId);
+        showToast('Friend removed');
+      } catch (error: any) {
+        Alert.alert('Error', error.message || 'Failed to remove friend');
+      }
+    }
+  };
+
+  const pendingRequests = friendRequests.filter(r => 
+    r.status === 'pending' && r.toUserId === user?.id
+  );
+
+  const sentRequests = friendRequests.filter(r => 
+    r.status === 'pending' && r.fromUserId === user?.id
+  );
+
   return (
     <View style={styles.container}>
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
@@ -218,6 +364,43 @@ export const ProfileScreen: React.FC = () => {
             )}
           </View>
         )}
+
+        {/* Friends Card */}
+        <View style={styles.card}>
+          <TouchableOpacity 
+            style={styles.menuItem} 
+            onPress={() => setShowFriendsModal(true)}
+            activeOpacity={0.7}
+          >
+            <View style={styles.menuItemLeft}>
+              <Text style={styles.menuIcon}>👥</Text>
+              <Text style={styles.menuText}>Friends</Text>
+              {friends.length > 0 && (
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>{friends.length}</Text>
+                </View>
+              )}
+            </View>
+            <Text style={styles.menuArrow}>›</Text>
+          </TouchableOpacity>
+          
+          {pendingRequests.length > 0 && (
+            <TouchableOpacity 
+              style={styles.menuItem} 
+              onPress={() => setShowFriendsModal(true)}
+              activeOpacity={0.7}
+            >
+              <View style={styles.menuItemLeft}>
+                <Text style={styles.menuIcon}>🔔</Text>
+                <Text style={styles.menuText}>Friend Requests</Text>
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>{pendingRequests.length}</Text>
+                </View>
+              </View>
+              <Text style={styles.menuArrow}>›</Text>
+            </TouchableOpacity>
+          )}
+        </View>
 
         {/* Account Card */}
         <View style={styles.card}>
@@ -361,6 +544,204 @@ export const ProfileScreen: React.FC = () => {
                 )}
               </TouchableOpacity>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Friends Modal */}
+      <Modal
+        visible={showFriendsModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowFriendsModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Friends</Text>
+              <TouchableOpacity
+                style={styles.addFriendButton}
+                onPress={() => {
+                  setShowFriendsModal(false);
+                  setShowAddFriendModal(true);
+                }}
+              >
+                <Text style={styles.addFriendButtonText}>+ Add</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Pending Requests */}
+            {pendingRequests.length > 0 && (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Pending Requests</Text>
+                {pendingRequests.map((request) => {
+                  const fromUser = pendingRequestUsers[request.id];
+                  return (
+                    <View key={request.id} style={styles.friendItem}>
+                      <View style={styles.friendInfo}>
+                        {fromUser?.photoURL ? (
+                          <Image source={{ uri: fromUser.photoURL }} style={styles.friendAvatar} />
+                        ) : (
+                          <View style={styles.friendAvatarFallback}>
+                            <Text style={styles.friendAvatarText}>
+                              {fromUser?.displayName?.charAt(0).toUpperCase() || '?'}
+                            </Text>
+                          </View>
+                        )}
+                        <View style={styles.friendDetails}>
+                          <Text style={styles.friendName}>
+                            {fromUser?.displayName || 'Loading...'}
+                          </Text>
+                          <Text style={styles.friendEmail}>{fromUser?.email || ''}</Text>
+                        </View>
+                      </View>
+                      <View style={styles.friendActions}>
+                        <TouchableOpacity
+                          style={[styles.actionButton, styles.acceptButton]}
+                          onPress={() => handleAcceptRequest(request.id)}
+                        >
+                          <Text style={styles.actionButtonText}>Accept</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.actionButton, styles.rejectButton]}
+                          onPress={() => handleRejectRequest(request.id)}
+                        >
+                          <Text style={styles.actionButtonText}>Reject</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            )}
+
+            {/* Friends List */}
+            <ScrollView style={styles.friendsList}>
+              {friends.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Text style={styles.emptyText}>No friends yet</Text>
+                  <Text style={styles.emptySubtext}>
+                    Add friends to share buckets with them!
+                  </Text>
+                </View>
+              ) : (
+                friends.map((friend) => (
+                  <View key={friend.id} style={styles.friendItem}>
+                    <View style={styles.friendInfo}>
+                      {friend.photoURL ? (
+                        <Image source={{ uri: friend.photoURL }} style={styles.friendAvatar} />
+                      ) : (
+                        <View style={styles.friendAvatarFallback}>
+                          <Text style={styles.friendAvatarText}>
+                            {friend.displayName.charAt(0).toUpperCase()}
+                          </Text>
+                        </View>
+                      )}
+                      <View style={styles.friendDetails}>
+                        <Text style={styles.friendName}>{friend.displayName}</Text>
+                        <Text style={styles.friendEmail}>{friend.email}</Text>
+                      </View>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.removeButton}
+                      onPress={() => handleRemoveFriend(friend.id, friend.displayName)}
+                    >
+                      <Text style={styles.removeButtonText}>Remove</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))
+              )}
+            </ScrollView>
+
+            <TouchableOpacity
+              style={[styles.modalButton, styles.cancelButton]}
+              onPress={() => setShowFriendsModal(false)}
+            >
+              <Text style={styles.cancelButtonText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Add Friend Modal */}
+      <Modal
+        visible={showAddFriendModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => {
+          setShowAddFriendModal(false);
+          setSearchQuery('');
+          setSearchResults([]);
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Add Friend</Text>
+
+            <TextInput
+              style={styles.input}
+              placeholder="Search by name or email..."
+              placeholderTextColor="#999"
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              autoFocus
+            />
+
+            {searching && (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="small" color="#6366F1" />
+              </View>
+            )}
+
+            <ScrollView style={styles.searchResults}>
+              {searchResults.map((result) => {
+                const isFriend = friends.some(f => f.id === result.id);
+                const hasPendingRequest = sentRequests.some(r => r.toUserId === result.id);
+                
+                return (
+                  <View key={result.id} style={styles.searchResultItem}>
+                    <View style={styles.friendInfo}>
+                      {result.photoURL ? (
+                        <Image source={{ uri: result.photoURL }} style={styles.friendAvatar} />
+                      ) : (
+                        <View style={styles.friendAvatarFallback}>
+                          <Text style={styles.friendAvatarText}>
+                            {result.displayName.charAt(0).toUpperCase()}
+                          </Text>
+                        </View>
+                      )}
+                      <View style={styles.friendDetails}>
+                        <Text style={styles.friendName}>{result.displayName}</Text>
+                        <Text style={styles.friendEmail}>{result.email}</Text>
+                      </View>
+                    </View>
+                    {isFriend ? (
+                      <Text style={styles.statusText}>Friend</Text>
+                    ) : hasPendingRequest ? (
+                      <Text style={styles.statusText}>Request Sent</Text>
+                    ) : (
+                      <TouchableOpacity
+                        style={styles.addButton}
+                        onPress={() => handleSendFriendRequest(result.id)}
+                      >
+                        <Text style={styles.addButtonText}>Add</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                );
+              })}
+            </ScrollView>
+
+            <TouchableOpacity
+              style={[styles.modalButton, styles.cancelButton]}
+              onPress={() => {
+                setShowAddFriendModal(false);
+                setSearchQuery('');
+                setSearchResults([]);
+              }}
+            >
+              <Text style={styles.cancelButtonText}>Close</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -604,6 +985,178 @@ const styles = StyleSheet.create({
   toastText: {
     color: '#fff',
     fontSize: 15,
+    fontWeight: '500',
+  },
+  badge: {
+    backgroundColor: '#6366F1',
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    marginLeft: 8,
+    minWidth: 24,
+    alignItems: 'center',
+  },
+  badgeText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  addFriendButton: {
+    backgroundColor: '#6366F1',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  addFriendButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  section: {
+    marginBottom: 20,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#111827',
+    marginBottom: 12,
+  },
+  friendsList: {
+    maxHeight: 400,
+    marginBottom: 16,
+  },
+  friendItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#f9fafb',
+    borderRadius: 12,
+    marginBottom: 8,
+  },
+  friendInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  friendAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    marginRight: 12,
+  },
+  friendAvatarFallback: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#6366F1',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  friendAvatarText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  friendDetails: {
+    flex: 1,
+  },
+  friendName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#111827',
+    marginBottom: 2,
+  },
+  friendEmail: {
+    fontSize: 14,
+    color: '#6b7280',
+  },
+  friendActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  actionButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  acceptButton: {
+    backgroundColor: '#10b981',
+  },
+  rejectButton: {
+    backgroundColor: '#ef4444',
+  },
+  actionButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  removeButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: '#fee2e2',
+    borderRadius: 6,
+  },
+  removeButtonText: {
+    color: '#dc2626',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  emptyText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#6b7280',
+    marginBottom: 8,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: '#9ca3af',
+    textAlign: 'center',
+  },
+  loadingContainer: {
+    alignItems: 'center',
+    paddingVertical: 20,
+  },
+  searchResults: {
+    maxHeight: 300,
+    marginBottom: 16,
+  },
+  searchResultItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#f9fafb',
+    borderRadius: 12,
+    marginBottom: 8,
+  },
+  addButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: '#6366F1',
+    borderRadius: 8,
+  },
+  addButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  statusText: {
+    fontSize: 14,
+    color: '#6b7280',
     fontWeight: '500',
   },
 });
