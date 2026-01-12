@@ -30,13 +30,18 @@ service cloud.firestore {
       // Users can read buckets they own
       allow read: if isAuthenticated() && resource.data.ownerId == request.auth.uid;
       
+      // Note: Member access checking is complex in Firestore rules for arrays of objects
+      // The service layer (subscribeToUserBuckets) handles member filtering client-side
+      // For now, we rely on client-side filtering for member access
+      // In production, consider using a separate members collection for better security
+      
       // Users can create buckets - check that ownerId matches authenticated user
       allow create: if isAuthenticated() && 
                        request.resource.data.ownerId == request.auth.uid &&
                        request.resource.data.name is string &&
                        request.resource.data.type in ['solo', 'duo', 'group'];
       
-      // Owner can update bucket details
+      // Owner can update bucket details (including adding/removing members)
       allow update: if isAuthenticated() && 
                        resource.data.ownerId == request.auth.uid;
       
