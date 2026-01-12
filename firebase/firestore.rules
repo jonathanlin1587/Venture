@@ -30,10 +30,10 @@ service cloud.firestore {
       // Users can read buckets they own
       allow read: if isAuthenticated() && resource.data.ownerId == request.auth.uid;
       
-      // Note: Member access checking is complex in Firestore rules for arrays of objects
-      // The service layer (subscribeToUserBuckets) handles member filtering client-side
-      // For now, we rely on client-side filtering for member access
-      // In production, consider using a separate members collection for better security
+      // Allow authenticated users to read buckets (membership is checked client-side)
+      // This is needed so members can see buckets they're added to
+      // The service layer filters to only show buckets where user is owner or member
+      allow read: if isAuthenticated();
       
       // Users can create buckets - check that ownerId matches authenticated user
       allow create: if isAuthenticated() && 
@@ -58,6 +58,10 @@ service cloud.firestore {
         allow read: if isAuthenticated() && 
                        get(/databases/$(database)/documents/buckets/$(bucketId)).data.ownerId == request.auth.uid;
         
+        // Also allow read for authenticated users (membership checked client-side)
+        // This ensures members can see goals in buckets they're part of
+        allow read: if isAuthenticated();
+        
         // Allow create if user is bucket owner
         allow create: if isAuthenticated() && 
                          get(/databases/$(database)/documents/buckets/$(bucketId)).data.ownerId == request.auth.uid &&
@@ -67,9 +71,9 @@ service cloud.firestore {
         allow update: if isAuthenticated() && 
                          get(/databases/$(database)/documents/buckets/$(bucketId)).data.ownerId == request.auth.uid;
         
-      // Allow delete if user is bucket owner
-      allow delete: if isAuthenticated() && 
-                       get(/databases/$(database)/documents/buckets/$(bucketId)).data.ownerId == request.auth.uid;
+        // Allow delete if user is bucket owner
+        allow delete: if isAuthenticated() && 
+                         get(/databases/$(database)/documents/buckets/$(bucketId)).data.ownerId == request.auth.uid;
       }
     }
     

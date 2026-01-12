@@ -267,12 +267,14 @@ export const ProfileScreen: React.FC = () => {
     try {
       await acceptFriendRequest(requestId);
       showToast('Friend request accepted!');
-      // The friends list will update automatically via the subscription
-      // But we can also refresh it manually to ensure it updates immediately
+      // Force refresh friends list to ensure both users see the update
       if (user?.id) {
-        const { getUserFriends } = await import('../services/friendService');
-        const updatedFriends = await getUserFriends(user.id);
-        setFriends(updatedFriends);
+        // Small delay to ensure Firestore has updated
+        setTimeout(async () => {
+          const { getUserFriends } = await import('../services/friendService');
+          const updatedFriends = await getUserFriends(user.id);
+          setFriends(updatedFriends);
+        }, 500);
       }
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to accept friend request');
