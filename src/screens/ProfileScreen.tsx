@@ -106,7 +106,22 @@ export const ProfileScreen: React.FC = () => {
   useEffect(() => {
     if (!user?.id) return;
 
+    // Load friends initially
+    const loadFriends = async () => {
+      try {
+        const { getUserFriends } = await import('../services/friendService');
+        const initialFriends = await getUserFriends(user.id);
+        setFriends(initialFriends);
+      } catch (error) {
+        console.error('Error loading initial friends:', error);
+      }
+    };
+
+    loadFriends();
+
+    // Subscribe to real-time updates
     const unsubscribe = subscribeToFriends(user.id, (updatedFriends) => {
+      console.log('Friends list updated:', updatedFriends.length, 'friends');
       setFriends(updatedFriends);
     });
 
@@ -268,13 +283,24 @@ export const ProfileScreen: React.FC = () => {
       await acceptFriendRequest(requestId);
       showToast('Friend request accepted!');
       // Force refresh friends list to ensure both users see the update
+      // The subscription should update automatically, but we refresh to be sure
       if (user?.id) {
-        // Small delay to ensure Firestore has updated
-        setTimeout(async () => {
-          const { getUserFriends } = await import('../services/friendService');
-          const updatedFriends = await getUserFriends(user.id);
-          setFriends(updatedFriends);
-        }, 500);
+        // Refresh immediately and again after a short delay to catch any timing issues
+        const { getUserFriends } = await import('../services/friendService');
+        const refreshFriends = async () => {
+          try {
+            const updatedFriends = await getUserFriends(user.id);
+            setFriends(updatedFriends);
+          } catch (error) {
+            console.error('Error refreshing friends:', error);
+          }
+        };
+        
+        // Refresh immediately
+        await refreshFriends();
+        
+        // Refresh again after delay to ensure Firestore has propagated
+        setTimeout(refreshFriends, 1000);
       }
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to accept friend request');

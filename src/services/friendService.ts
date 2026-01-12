@@ -280,21 +280,27 @@ export const getUserFriends = async (userId: string): Promise<User[]> => {
 
 /**
  * Subscribe to friends list for a user
+ * Listens to all accepted friend requests and filters for the current user
  */
 export const subscribeToFriends = (
   userId: string,
   callback: (friends: User[]) => void
 ): Unsubscribe => {
+  // Subscribe to all accepted friend requests
+  // This ensures both users see updates when a request is accepted
   const friendRequestsQuery = query(
     collection(db, 'friendRequests'),
     where('status', '==', 'accepted')
   );
 
-  return onSnapshot(friendRequestsQuery, async (snapshot) => {
+  let cachedFriends: User[] = [];
+
+  const unsubscribe = onSnapshot(friendRequestsQuery, async (snapshot) => {
     const friendIds: string[] = [];
 
     snapshot.forEach((doc) => {
       const data = doc.data() as FriendRequestDocument;
+      // Include friend if user is either the sender or receiver
       if (data.fromUserId === userId) {
         friendIds.push(data.toUserId);
       } else if (data.toUserId === userId) {
@@ -309,8 +315,19 @@ export const subscribeToFriends = (
     );
 
     const validFriends = friends.filter((friend): friend is User => friend !== null);
-    callback(validFriends);
+    
+    // Only update if the list actually changed to avoid unnecessary re-renders
+    const friendsChanged = 
+      validFriends.length !== cachedFriends.length ||
+      validFriends.some((f, i) => f.id !== cachedFriends[i]?.id);
+    
+    if (friendsChanged) {
+      cachedFriends = validFriends;
+      callback(validFriends);
+    }
   });
+
+  return unsubscribe;
 };
 
 /**
