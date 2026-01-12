@@ -641,7 +641,10 @@ export const updateGoal = async (
     }
 
     if (updates.description !== undefined) {
-      updateData.description = updates.description || null;
+      // Allow null to explicitly remove description, empty string also becomes null
+      updateData.description = updates.description && updates.description.trim() 
+        ? updates.description.trim() 
+        : null;
     }
 
     if (updates.completed !== undefined) {
@@ -662,6 +665,7 @@ export const updateGoal = async (
     }
 
     if (updates.dueDate !== undefined) {
+      // Allow null to explicitly remove dueDate
       updateData.dueDate = updates.dueDate
         ? Timestamp.fromDate(updates.dueDate)
         : null;

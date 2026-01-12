@@ -341,10 +341,29 @@ export const BucketDetailScreen: React.FC<BucketDetailScreenProps> = ({ route })
 
       const updates: any = {
         title: goalTitle.trim(),
-        description: goalDescription.trim() || undefined,
-        dueDate,
         categories: goalCategories.length > 0 ? goalCategories : [],
       };
+
+      // Handle optional description
+      // If field is cleared (empty), set to null to remove it
+      // If field has content, use it
+      // This allows users to remove descriptions by clearing the field
+      const trimmedDescription = goalDescription.trim();
+      if (trimmedDescription === '') {
+        updates.description = null; // Explicitly remove description
+      } else {
+        updates.description = trimmedDescription;
+      }
+
+      // Handle optional dueDate
+      // If field is cleared (empty), set to null to remove it
+      // If field has a valid date, use it
+      // This allows users to remove due dates by clearing the field
+      if (goalDueDate.trim() === '') {
+        updates.dueDate = null; // Explicitly remove due date
+      } else if (dueDate) {
+        updates.dueDate = dueDate;
+      }
 
       // Only include completedAt if editing a completed goal
       if (editingGoal.completed && completedAt) {
