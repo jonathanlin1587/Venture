@@ -14,7 +14,7 @@ import {
   Unsubscribe,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { Bucket, Goal, BucketDocument, GoalDocument, BucketType, BucketMember } from '../types';
+import { Bucket, Goal, BucketDocument, GoalDocument, BucketType, BucketMember, MemberRole } from '../types';
 
 /**
  * Compress and convert an image file to base64

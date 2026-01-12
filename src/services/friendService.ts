@@ -241,14 +241,6 @@ export const subscribeToFriendRequests = (
     unsubscribeFrom();
     unsubscribeTo();
   };
-
-  return onSnapshot(requestsQuery, (snapshot) => {
-    const requests: FriendRequest[] = [];
-    snapshot.forEach((doc) => {
-      requests.push(documentToFriendRequest(doc.id, doc.data() as FriendRequestDocument));
-    });
-    callback(requests);
-  });
 };
 
 /**
