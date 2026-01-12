@@ -30,9 +30,45 @@ export const signInWithGoogle = async (idToken?: string, accessToken?: string): 
   try {
     if (Platform.OS === 'web') {
       // Web implementation using Firebase popup
+      console.log('🌐 Web Google Sign-In: Starting...');
+      console.log('🔍 Firebase Auth check:', { 
+        hasAuth: !!auth, 
+        authDomain: auth?.app?.options?.authDomain,
+        projectId: auth?.app?.options?.projectId 
+      });
+      
       const provider = new GoogleAuthProvider();
-      const result = await signInWithPopup(auth, provider);
-      return await createOrUpdateUserProfile(result.user);
+      
+      // Add error handling for popup
+      try {
+        console.log('📱 Opening Google Sign-In popup...');
+        const result = await signInWithPopup(auth, provider);
+        console.log('✅ Google Sign-In successful:', result.user.email);
+        return await createOrUpdateUserProfile(result.user);
+      } catch (popupError: any) {
+        console.error('❌ Google Sign-In popup error:', {
+          code: popupError.code,
+          message: popupError.message,
+          email: popupError.email,
+          credential: popupError.credential,
+          fullError: popupError,
+        });
+        
+        // Provide helpful error messages
+        if (popupError.code === 'auth/popup-closed-by-user') {
+          throw new Error('Sign-in was cancelled. Please try again.');
+        } else if (popupError.code === 'auth/popup-blocked') {
+          throw new Error('Popup was blocked by your browser. Please allow popups for this site.');
+        } else if (popupError.code === 'auth/unauthorized-domain') {
+          throw new Error('This domain is not authorized. Please contact support.');
+        } else if (popupError.code === 'auth/operation-not-allowed') {
+          throw new Error('Google Sign-In is not enabled. Please contact support.');
+        } else if (popupError.code === 'auth/network-request-failed') {
+          throw new Error('Network error. Please check your internet connection.');
+        }
+        
+        throw popupError;
+      }
     } else {
       // Mobile implementation - requires idToken or accessToken from expo-auth-session
       if (!idToken && !accessToken) {
