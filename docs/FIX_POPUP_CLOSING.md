@@ -37,7 +37,7 @@ Your Google Web Client ID: `158074708628-q57etqvaf7hthh3hs61rtko6npfss5dh.apps.g
 5. Click on it to edit
 6. Under **Authorized redirect URIs**, add:
    ```
-   https://your-project.vercel.app
+   https://your-project.vercel.app     
    https://your-project.vercel.app/__/auth/handler
    ```
    (Replace `your-project.vercel.app` with your actual Vercel domain)

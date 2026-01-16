@@ -13,8 +13,8 @@
     "tunnel": "expo start --tunnel",
     "build:web": "node scripts/build-web.js",
     "deploy:rules": "firebase deploy --only firestore:rules",
-    "deploy:firestore": "bash deploy-firestore.sh",
-    "deploy:firestore-rules": "bash deploy-rules.sh",
+    "deploy:firestore": "bash scripts/deploy-firestore.sh",
+    "deploy:firestore-rules": "bash scripts/deploy-rules.sh",
     "admin:set": "node scripts/setAdmin.js"
   },
   "dependencies": {
